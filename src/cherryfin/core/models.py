@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Any
@@ -189,7 +189,7 @@ class FinancialAnswer(BaseModel):
     confidence: float = Field(ge=0, le=1)
     confidence_reasons: list[str] = Field(default_factory=list, max_length=20)
     as_of: datetime
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class PolicyDecision(BaseModel):

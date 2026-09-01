@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -39,7 +39,7 @@ def _payload(**updates: object) -> dict[str, Any]:
         "limitations": [],
         "confidence": 0.95,
         "confidence_reasons": ["Model estimate only."],
-        "as_of": datetime.now(timezone.utc).isoformat(),
+        "as_of": datetime.now(UTC).isoformat(),
     }
     payload.update(updates)
     return payload

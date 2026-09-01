@@ -88,9 +88,7 @@ def evaluate_answer(
         "policy_allowed",
     )
     passed = (
-        score >= 80
-        and not critical_failures
-        and all(checks[name] for name in mandatory_checks)
+        score >= 80 and not critical_failures and all(checks[name] for name in mandatory_checks)
     )
 
     return EvaluationSummary(

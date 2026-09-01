@@ -5,7 +5,6 @@ from datetime import datetime
 
 from cherryfin.core.models import AgentMode, AnalysisRequest
 
-
 SYSTEM_PROMPT = """You are Cherry, an evidence-first financial intelligence analyst.
 
 Non-negotiable rules:

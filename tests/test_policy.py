@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from cherryfin.core.models import (
@@ -19,7 +19,7 @@ def _answer(**updates: object) -> FinancialAnswer:
         "mode": AgentMode.PERSONAL_CFO,
         "summary": "Educational cash-flow scenario.",
         "confidence": 0.5,
-        "as_of": datetime.now(timezone.utc),
+        "as_of": datetime.now(UTC),
         "limitations": ["Illustrative only."],
     }
     payload.update(updates)

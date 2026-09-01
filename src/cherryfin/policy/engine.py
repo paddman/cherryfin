@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from cherryfin.core.models import (
     ActionKind,
@@ -62,8 +62,7 @@ class PolicyEngine:
         warnings: list[str] = []
 
         if any(
-            re.search(pattern, request.query, flags=re.IGNORECASE)
-            for pattern in _SECRET_PATTERNS
+            re.search(pattern, request.query, flags=re.IGNORECASE) for pattern in _SECRET_PATTERNS
         ):
             blocked.append(
                 "The request appears to contain a credential, private key, or recovery phrase. "
@@ -114,16 +113,13 @@ class PolicyEngine:
         ):
             blocked.append("Confidence exceeds the allowed cap for uncited market analysis.")
 
-        answer_text = " ".join(
-            [answer.summary, *answer.key_findings, *answer.confidence_reasons]
-        )
+        answer_text = " ".join([answer.summary, *answer.key_findings, *answer.confidence_reasons])
         if any(
-            re.search(pattern, answer_text, flags=re.IGNORECASE)
-            for pattern in _GUARANTEE_PATTERNS
+            re.search(pattern, answer_text, flags=re.IGNORECASE) for pattern in _GUARANTEE_PATTERNS
         ):
             blocked.append("The answer contains a prohibited guarantee or risk-free claim.")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for evidence in request.evidence:
             data_time = evidence.data_as_of or evidence.published_at or evidence.observed_at
             data_time = self._as_utc(data_time)
@@ -134,12 +130,13 @@ class PolicyEngine:
                         f"Evidence {evidence.evidence_id} exceeds the configured market-data "
                         "freshness window."
                     )
-            elif evidence.kind is EvidenceKind.NEWS:
-                if age_seconds > self._settings.max_news_age_hours * 3600:
-                    warnings.append(
-                        f"Evidence {evidence.evidence_id} exceeds the configured news "
-                        "freshness window."
-                    )
+            elif (
+                evidence.kind is EvidenceKind.NEWS
+                and age_seconds > self._settings.max_news_age_hours * 3600
+            ):
+                warnings.append(
+                    f"Evidence {evidence.evidence_id} exceeds the configured news freshness window."
+                )
 
         requires_approval = False
         for action in answer.proposed_actions:
@@ -160,9 +157,7 @@ class PolicyEngine:
                 if not self._settings.execution_enabled:
                     blocked.append("Live financial execution is disabled by configuration.")
                 if not action.idempotency_key:
-                    blocked.append(
-                        f"Executable action {action.action_id} has no idempotency key."
-                    )
+                    blocked.append(f"Executable action {action.action_id} has no idempotency key.")
                 if action.notional is None:
                     blocked.append(
                         f"Executable action {action.action_id} has no explicit notional."
@@ -203,8 +198,8 @@ class PolicyEngine:
     @staticmethod
     def _as_utc(value: datetime) -> datetime:
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     @staticmethod
     def _deduplicate(values: list[str]) -> list[str]:

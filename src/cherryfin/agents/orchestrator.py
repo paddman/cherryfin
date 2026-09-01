@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
@@ -50,7 +50,7 @@ class CherryFinancialAgent:
         payload["mode"] = routed_mode
         payload.setdefault(
             "as_of",
-            (request.requested_as_of or datetime.now(timezone.utc)).isoformat(),
+            (request.requested_as_of or datetime.now(UTC)).isoformat(),
         )
 
         try:
@@ -93,9 +93,7 @@ class CherryFinancialAgent:
 
         supplied = {item.evidence_id: item for item in request.evidence}
         used_scores = [
-            supplied[item].trust_score
-            for item in answer.evidence_ids_used
-            if item in supplied
+            supplied[item].trust_score for item in answer.evidence_ids_used if item in supplied
         ]
         if used_scores:
             evidence_cap = min(used_scores) + 0.10

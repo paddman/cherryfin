@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from cherryfin.core.models import AgentMode
 
-
 _KEYWORDS: tuple[tuple[AgentMode, tuple[str, ...]], ...] = (
     (
         AgentMode.TRADING_RESEARCH,
