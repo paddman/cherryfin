@@ -58,10 +58,11 @@ class TenantStoreRegistry:
             configured.resolve().parent.mkdir(parents=True, exist_ok=True)
             return str(configured)
 
-        if configured.suffix:
-            root = configured.parent / f"{configured.stem}_tenants"
-        else:
-            root = configured
+        root = (
+            configured.parent / f"{configured.stem}_tenants"
+            if configured.suffix
+            else configured
+        )
         root.resolve().mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(tenant_id.encode()).hexdigest()
         return str(root / f"{digest}.db")
