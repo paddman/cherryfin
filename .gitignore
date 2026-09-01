@@ -28,3 +28,7 @@ Thumbs.db
 .cherryfin/
 logs/
 data/private/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*_tenants/

@@ -1,99 +1,149 @@
 # CherryFin
 
-**Point-in-time financial intelligence. Evidence first. Human controlled.**
+**Tenant-isolated financial intelligence. Evidence first. Human controlled.**
 
-CherryFin is not designed as a confident finance chatbot. It is a financial-agent foundation that
-separates source evidence, verified claims, deterministic calculations, model analysis, policy,
-human approval, and execution.
+CherryFin is a provider-neutral foundation for building high-assurance financial agents. It
+separates source evidence, verified claims, deterministic calculations, model synthesis, policy,
+human approval, and execution instead of treating a fluent model response as a financial control.
 
-Version `0.2.0` adds the evidence and market-intelligence layer required before serious investment,
-CFO, portfolio, or trading research can be trusted.
+Version `0.3.0` adds the security and integrity boundary around the point-in-time evidence and
+claims ledger introduced in version `0.2.0`.
 
-## What is included
+## Current capabilities
 
-- Thai and English financial-agent routing
-- Personal CFO, investment research, portfolio risk, business CFO, and trading-research modes
+- Thai and English routing for personal CFO, investment research, portfolio risk, business CFO,
+  and trading-research workflows
 - OpenAI-compatible model adapter for LM Studio, Ollama, vLLM, SGLang, and approved hosted models
-- Immutable evidence envelopes with SHA-256 integrity, timestamps, trust, and licensing metadata
-- Text, structured JSON, XBRL/XML, and binary/PDF evidence storage
-- Canonical instrument master with collision-safe identifiers
-- Financial claims ledger with typed values and source lineage
-- Bitemporal point-in-time retrieval using business time and knowledge time
-- Contradiction detection, disputed status, explicit supersession, and human resolution primitives
-- Thai/English table-aware statement-row normalization
-- Official-filing connector contract with HTTPS allowlisting and byte limits
-- Licensed market-data connector contract with point-in-time observations
-- Deterministic growth, loan, and historical portfolio-risk calculations
-- Policy checks for fabricated IDs, unsupported claims, look-ahead, stale data, guarantees, secrets,
-  approval bypass, and transaction attempts
-- FastAPI, SQLite persistence, Docker, tests, and read-only CI verification
-
-## Why two clocks matter
-
-Financial systems routinely fail by mixing what happened with what was known.
-
-CherryFin records:
-
-- `effective_at`: when a fact or market observation applies in the financial world
-- `asserted_at`: when the claim entered the knowledge system
-- `observed_at`: when the supporting evidence was retrieved or received
-- `knowledge_as_of`: the latest information a replay or backtest is allowed to know
-- `business_as_of`: the financial date being analyzed
-
-A 2025 result published in February 2026 cannot be used in a backtest pretending to operate in
-January 2026. Humans invented enough creative accounting already; the software need not add time
-travel.
+- Immutable evidence envelopes with SHA-256 payload and canonical-record integrity
+- Typed financial claims with evidence lineage and business-time/knowledge-time retrieval
+- Contradiction detection, disputed status, explicit supersession, and human resolution
+- Thai/English financial-statement row normalization
+- Official-filing and licensed-market-data connector contracts
+- Deterministic growth, loan, and historical portfolio-risk calculators
+- Database-per-tenant isolation for the SQLite deployment
+- Tenant credentials, fixed roles, and scope-based authorization
+- Atomic evidence/claim/contradiction writes using `BEGIN IMMEDIATE`
+- Server-controlled ingestion and assertion timestamps in the API path
+- Hash-chained audit events with tenant, actor, request, resource, and payload hashes
+- Verified-source release gates for market and investment analysis
+- FastAPI, Docker, persistent storage, tests, and read-only CI verification
 
 ## Architecture
 
 ```text
-Official filings / licensed market data / approved user documents
-                              |
-                              v
-                 Integrity and source-policy checks
-                              |
-                              v
-             Immutable evidence store + content SHA-256
-                              |
-                              v
-        Table-aware extraction / provider-normalized observations
-                              |
-                              v
-        Typed claims ledger + bitemporal status history
-                              |
-                 +------------+-------------+
-                 |                          |
-                 v                          v
-       Contradiction detector      Point-in-time retrieval
-                 |                          |
-                 +------------+-------------+
-                              v
-              Cherry analysis context with claim/evidence IDs
-                              |
-                              v
-                  LLM synthesis under deterministic policy
-                              |
-                              v
-                    Quality gate and action proposals
-                              |
-                              v
-              Separate human approval and execution services
+Official filings / licensed data / approved user input
+                         |
+                         v
+         Authentication + tenant + source policy
+                         |
+                         v
+       Integrity validation + server knowledge time
+                         |
+                         v
+   Tenant evidence store + typed bitemporal claims ledger
+                         |
+             +-----------+-----------+
+             |                       |
+             v                       v
+   Contradiction lifecycle     Point-in-time retrieval
+             |                       |
+             +-----------+-----------+
+                         v
+       Canonical claim/evidence context for Cherry
+                         |
+                         v
+        LLM synthesis under deterministic policy
+                         |
+                         v
+     Evaluation gate + human-controlled proposals
 ```
 
-The analysis API never authorizes a transaction. No bank, broker, payment, custody, or vault
-credential is exposed to the model.
+The analysis API never authorizes a bank transfer, payment, or market order. No bank, broker,
+payment, custody, vault, or signing credential is exposed to the model.
+
+## Trust model
+
+CherryFin distinguishes source categories rather than trusting whatever label a caller places on a
+document.
+
+- Evidence ingested through reviewed regulator, exchange, official-filing, company-disclosure, or
+  licensed-data paths may satisfy the verified-source gate.
+- Evidence supplied directly to `/v1/analyze` is rewritten as `user_provided`, assigned a `user:`
+  identifier, stripped of claimed URI/hash/license metadata, and confidence-capped.
+- Inline claims are rejected by the public analysis endpoint. Verified claims must be loaded from
+  the authenticated tenant ledger through `knowledge_context`.
+- A caller cannot replace a ledger claim or evidence record by reusing its ID.
+- Model-created calculations are rejected by policy until they can reference a server-side
+  calculation-registry artifact. The dedicated calculator endpoints continue to run deterministic
+  code directly.
+
+## Authentication and tenancy
+
+All `/v1/*` endpoints require authentication outside development/test. Health and root endpoints
+remain public for orchestration.
+
+Configure tenant credentials as JSON:
+
+```dotenv
+CHERRYFIN_ENVIRONMENT=production
+CHERRYFIN_DEFAULT_TENANT_ID=default
+CHERRYFIN_ADMIN_API_KEY=<platform-admin-secret>
+CHERRYFIN_TENANT_CREDENTIALS={"acme":{"api_key":"<tenant-secret>","role":"analyst","actor_id":"acme-agent"}}
+```
+
+Request headers:
+
+```text
+X-CherryFin-Tenant: acme
+X-CherryFin-Actor: analyst@example.com
+X-CherryFin-Key: <tenant credential>
+X-Request-ID: <correlation ID>
+```
+
+Roles are fixed in protected configuration. The API does not accept a role or scope header from the
+caller.
+
+Supported roles:
+
+- `viewer`
+- `analyst`
+- `data_ingestor`
+- `reviewer`
+- `tenant_admin`
+- `platform_admin`
+
+While SQLite remains the backend, CherryFin gives each tenant a separate database file. A future
+PostgreSQL backend can preserve the same boundary using row-level security and composite tenant
+keys.
+
+## Point-in-time semantics
+
+CherryFin keeps financial time separate from knowledge time:
+
+- `effective_at`: when a claim applies in the financial world
+- `data_as_of`: the date represented by source data
+- `observed_at`: the source timestamp reported by a connector or caller
+- `ingested_at`: when the CherryFin server accepted the evidence
+- `asserted_at`: when the server accepted the claim
+- `business_as_of`: the financial date under analysis
+- `knowledge_as_of`: the latest information a replay may use
+
+Production API stores assign `ingested_at` and `asserted_at` using the server clock. Backfilled
+source dates remain source metadata and cannot rewrite CherryFin's transaction-time history.
 
 ## Start locally
 
 ```bash
-git switch feat/evidence-market-intelligence
-cp .env.example .env
+git switch feat/security-tenancy-integrity
+python -m venv .venv
+source .venv/bin/activate
 python -m pip install -e ".[dev]"
+cp .env.example .env
 pytest
 uvicorn cherryfin.api.main:app --host 0.0.0.0 --port 8080
 ```
 
-Configure a local model when needed:
+Example local model configuration:
 
 ```dotenv
 CHERRYFIN_LLM_BASE_URL=http://127.0.0.1:1234/v1
@@ -101,26 +151,8 @@ CHERRYFIN_LLM_API_KEY=local
 CHERRYFIN_LLM_MODEL=qwen3.5-35b
 ```
 
-For a persistent local intelligence store:
-
-```dotenv
-CHERRYFIN_INTELLIGENCE_STORE_PATH=./data/intelligence.db
-```
-
-Outside development or test, mutating APIs remain unavailable until an admin key is configured:
-
-```dotenv
-CHERRYFIN_ENVIRONMENT=production
-CHERRYFIN_ADMIN_API_KEY=replace-with-a-secret-from-a-vault
-```
-
-Send that key only to mutating intelligence endpoints and raw evidence-content reads:
-
-```text
-X-CherryFin-Admin-Key: <secret>
-```
-
-Do not place the key in prompts, evidence text, source documents, logs, or repository files.
+A development instance with no configured API credentials uses an explicit development bypass.
+The bypass is disabled as soon as any tenant credential or platform-admin key is configured.
 
 ## Docker
 
@@ -128,97 +160,38 @@ Do not place the key in prompts, evidence text, source documents, logs, or repos
 docker compose up --build
 ```
 
-The Compose configuration mounts a named volume at `/var/lib/cherryfin` and keeps the remaining
-container filesystem read-only.
+The Compose deployment mounts persistent data at `/var/lib/cherryfin`, keeps the remaining
+filesystem read-only, and runs the service without elevated Linux capabilities.
 
 ## Main APIs
 
-### Health and capabilities
+```text
+GET  /health
+GET  /v1/capabilities
+POST /v1/analyze
 
-```bash
-curl http://127.0.0.1:8080/health
-curl http://127.0.0.1:8080/v1/capabilities
+POST /v1/instruments
+GET  /v1/instruments/resolve
+
+POST /v1/evidence/ingest
+GET  /v1/evidence/{evidence_id}
+
+POST /v1/claims
+POST /v1/claims/query
+
+GET  /v1/contradictions
+POST /v1/contradictions/{contradiction_id}/resolve
+
+GET  /v1/audit/events
+GET  /v1/audit/verify
+GET  /v1/audit/snapshot
+
+POST /v1/calculators/compound-growth
+POST /v1/calculators/loan
+POST /v1/calculators/portfolio-risk
 ```
 
-### Register an instrument
-
-```bash
-curl -X POST http://127.0.0.1:8080/v1/instruments \
-  -H 'Content-Type: application/json' \
-  -H 'X-CherryFin-Admin-Key: development-key' \
-  -d '{
-    "name": "Example Public Company",
-    "asset_class": "equity",
-    "currency": "THB",
-    "exchange": "SET",
-    "identifiers": [
-      {"scheme": "ticker", "value": "ABC", "venue": "SET", "primary": true}
-    ]
-  }'
-```
-
-### Ingest official evidence and a structured statement table
-
-```bash
-curl -X POST http://127.0.0.1:8080/v1/evidence/ingest \
-  -H 'Content-Type: application/json' \
-  -H 'X-CherryFin-Admin-Key: development-key' \
-  -d '{
-    "document": {
-      "evidence": {
-        "evidence_id": "ev_annual_2025",
-        "kind": "official_filing",
-        "source_name": "Official Registry",
-        "title": "2025 audited financial statements",
-        "observed_at": "2026-02-15T09:00:00Z",
-        "data_as_of": "2025-12-31T23:59:59Z",
-        "trust_score": 0.98,
-        "license_tag": "public-filing"
-      },
-      "content": "approved extracted text or canonical source payload",
-      "mime_type": "text/plain",
-      "language": "th"
-    },
-    "statement": {
-      "subject_id": "issuer:abc",
-      "statement_type": "income_statement",
-      "currency": "THB",
-      "scale": "millions",
-      "rows": [
-        {
-          "label": "รายได้รวม",
-          "cells": [
-            {
-              "period_start": "2025-01-01T00:00:00Z",
-              "period_end": "2025-12-31T23:59:59Z",
-              "raw_value": "1234.50"
-            }
-          ]
-        }
-      ]
-    }
-  }'
-```
-
-CherryFin computes the content hash, stores the evidence, converts recognized rows into claims,
-records unresolved labels, and reports contradictions with existing claims.
-
-### Query knowledge exactly as it existed
-
-```bash
-curl -X POST http://127.0.0.1:8080/v1/claims/query \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "subject_id": "issuer:abc",
-    "predicate": "revenue",
-    "business_as_of": "2025-12-31T23:59:59Z",
-    "knowledge_as_of": "2026-02-20T00:00:00Z"
-  }'
-```
-
-### Hydrate an analysis from the claims ledger
-
-Include `knowledge_context` in `/v1/analyze`:
+### Point-in-time analysis request
 
 ```json
 {
@@ -234,40 +207,30 @@ Include `knowledge_context` in `/v1/analyze`:
 }
 ```
 
-The API retrieves only eligible claims and their supporting evidence, attaches a snapshot digest,
-and then calls the model. The model must return the exact `claim_ids_used` and `evidence_ids_used`.
-Fabricated references fail policy and evaluation.
+The API retrieves eligible tenant claims and supporting evidence, attaches an audit snapshot, and
+then calls the model. Fabricated claim IDs, evidence IDs, future knowledge, retracted claims,
+unsupported confidence, and unregistered calculation records fail deterministic policy.
 
-## Current boundaries
-
-This milestone deliberately does **not** include:
-
-- automatic crawling of arbitrary URLs
-- a bundled commercial market-data feed
-- broker, bank, exchange, custody, payment, or tax filing execution
-- production identity, tenant isolation, KMS, WORM object storage, or distributed consensus
-- PDF layout extraction or OCR as a trusted source of truth
-- valuation promises, price predictions, or claims of profitable performance
-
-The official-filing fetcher accepts only explicit HTTPS hosts, disables redirects, validates content
-type, and enforces a byte limit. It is a connector primitive, not a public arbitrary-URL endpoint.
-
-SQLite is suitable for the single-node foundation and deterministic tests. A production multi-node
-deployment should retain these contracts while moving metadata to PostgreSQL, source objects to
-versioned object storage, secrets to a vault, and audit records to tamper-evident retention.
-
-## Tests
+## Verification
 
 ```bash
 python -m compileall -q src tests
-pytest
 ruff check .
 ruff format --check .
+pytest
 ```
 
-The suite covers calculations, routing, policy, evidence integrity, binary documents, identifier
-collisions, claim dependencies, bitemporal retrieval, status replay, contradictions, revisions,
-human resolution, Thai/English financial tables, provider contracts, and analysis hydration.
+The tests cover authentication, authorization, tenant isolation, evidence integrity, payload
+redaction, claim dependencies, bitemporal retrieval, look-ahead rejection, transaction rollback,
+contradictions, human resolution, audit-chain verification, Thai/English statement normalization,
+provider contracts, and analysis hydration.
 
-See [docs/EVIDENCE_INTELLIGENCE.md](docs/EVIDENCE_INTELLIGENCE.md) for the data model and security
-invariants.
+## Production boundary
+
+Version `0.3.0` does not claim to include external OIDC federation, KMS-managed encryption,
+PostgreSQL row-level security, WORM object storage, externally signed audit anchoring, distributed
+rate limiting, broker/bank connectivity, or autonomous execution. Those controls remain required
+before exposing CherryFin as a public financial service.
+
+See [Security and Tenancy](docs/SECURITY_TENANCY.md) and
+[Evidence Intelligence](docs/EVIDENCE_INTELLIGENCE.md).

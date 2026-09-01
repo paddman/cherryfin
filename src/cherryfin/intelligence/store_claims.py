@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from cherryfin.core.models import ClaimStatus, Evidence, FinancialClaim
 from cherryfin.intelligence.models import KnowledgeQuery
@@ -17,19 +17,29 @@ from cherryfin.intelligence.store_common import (
 
 class ClaimStoreMixin:
     def add_claim(self, claim: FinancialClaim) -> tuple[FinancialClaim, bool]:
-        fingerprint = claim_fingerprint(claim)
-        payload = json_dumps(claim)
-        asserted_at = as_utc(claim.asserted_at)
+        stored_claim = (
+            claim
+            if self.trust_client_timestamps
+            else claim.model_copy(
+                update={
+                    "asserted_at": datetime.now(UTC),
+                    "status": ClaimStatus.ACTIVE,
+                }
+            )
+        )
+        fingerprint = claim_fingerprint(stored_claim)
+        payload = json_dumps(stored_claim)
+        asserted_at = as_utc(stored_claim.asserted_at)
 
-        with self._lock, self._connection:
+        with self._write():
             by_id = self._connection.execute(
-                "SELECT payload_json FROM claims WHERE claim_id = ?",
-                (claim.claim_id,),
+                "SELECT payload_json, fingerprint FROM claims WHERE claim_id = ?",
+                (stored_claim.claim_id,),
             ).fetchone()
             if by_id:
-                if by_id["payload_json"] != payload:
+                if by_id["fingerprint"] != fingerprint:
                     raise IntegrityConflictError(
-                        f"claim {claim.claim_id} already exists with different content"
+                        f"claim {stored_claim.claim_id} already exists with different content"
                     )
                 return FinancialClaim.model_validate_json(by_id["payload_json"]), False
 
@@ -40,35 +50,38 @@ class ClaimStoreMixin:
             if by_fingerprint:
                 return FinancialClaim.model_validate_json(by_fingerprint["payload_json"]), False
 
-            placeholders = ",".join("?" for _ in claim.evidence_ids)
+            placeholders = ",".join("?" for _ in stored_claim.evidence_ids)
             evidence_rows = self._connection.execute(
                 (
-                    "SELECT evidence_id, observed_at, evidence_json FROM evidence "
+                    "SELECT evidence_id, observed_at, ingested_at, evidence_json FROM evidence "
                     f"WHERE evidence_id IN ({placeholders})"
                 ),
-                tuple(claim.evidence_ids),
+                tuple(stored_claim.evidence_ids),
             ).fetchall()
             evidence_by_id = {row["evidence_id"]: row for row in evidence_rows}
-            missing = sorted(set(claim.evidence_ids) - set(evidence_by_id))
+            missing = sorted(set(stored_claim.evidence_ids) - set(evidence_by_id))
             if missing:
                 raise EvidenceDependencyError(
                     "claim references evidence that is not stored: " + ", ".join(missing)
                 )
+
+            time_column = "observed_at" if self.trust_client_timestamps else "ingested_at"
             future_evidence = sorted(
                 evidence_id
                 for evidence_id, row in evidence_by_id.items()
-                if datetime.fromisoformat(row["observed_at"]) > asserted_at
+                if datetime.fromisoformat(row[time_column]) > asserted_at
             )
             if future_evidence:
                 raise EvidenceDependencyError(
-                    "claim asserted_at precedes supporting evidence observed_at: "
+                    "claim asserted_at precedes supporting evidence knowledge time: "
                     + ", ".join(future_evidence)
                 )
+
             support_trust_ceiling = min(
                 Evidence.model_validate_json(row["evidence_json"]).trust_score
                 for row in evidence_rows
             )
-            if claim.confidence > support_trust_ceiling:
+            if stored_claim.confidence > support_trust_ceiling:
                 raise EvidenceDependencyError(
                     "claim confidence exceeds the least-trusted supporting evidence"
                 )
@@ -81,20 +94,20 @@ class ClaimStoreMixin:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    claim.claim_id,
+                    stored_claim.claim_id,
                     fingerprint,
-                    claim.subject_id,
-                    claim.predicate,
-                    iso(claim.effective_at),
-                    iso(claim.expires_at) if claim.expires_at else None,
-                    iso(claim.asserted_at),
-                    claim.status.value,
+                    stored_claim.subject_id,
+                    stored_claim.predicate,
+                    iso(stored_claim.effective_at),
+                    iso(stored_claim.expires_at) if stored_claim.expires_at else None,
+                    iso(stored_claim.asserted_at),
+                    stored_claim.status.value,
                     payload,
                 ),
             )
             self._connection.executemany(
                 "INSERT INTO claim_evidence(claim_id, evidence_id) VALUES (?, ?)",
-                [(claim.claim_id, evidence_id) for evidence_id in claim.evidence_ids],
+                [(stored_claim.claim_id, evidence_id) for evidence_id in stored_claim.evidence_ids],
             )
             self._connection.execute(
                 """
@@ -102,13 +115,27 @@ class ClaimStoreMixin:
                 VALUES (?, ?, ?, ?)
                 """,
                 (
-                    claim.claim_id,
-                    claim.status.value,
-                    iso(claim.asserted_at),
+                    stored_claim.claim_id,
+                    stored_claim.status.value,
+                    iso(stored_claim.asserted_at),
                     "initial claim status",
                 ),
             )
-        return claim, True
+            self.append_audit_event(
+                action="claim.created",
+                resource_type="claim",
+                resource_id=stored_claim.claim_id,
+                payload={
+                    "subject_id": stored_claim.subject_id,
+                    "predicate": stored_claim.predicate,
+                    "evidence_ids": stored_claim.evidence_ids,
+                    "confidence": stored_claim.confidence,
+                    "status": stored_claim.status.value,
+                    "fingerprint": fingerprint,
+                },
+                occurred_at=stored_claim.asserted_at,
+            )
+        return stored_claim, True
 
     def get_claim(self, claim_id: str) -> FinancialClaim:
         with self._lock:
@@ -201,22 +228,47 @@ class ClaimStoreMixin:
         changed_at: datetime | None = None,
         reason: str | None = None,
     ) -> FinancialClaim:
-        claim = self.get_claim(claim_id)
-        if claim.status is status:
-            return claim
-        updated = claim.model_copy(update={"status": status})
-        effective_change_time = changed_at or datetime.now(UTC)
-        with self._lock, self._connection:
+        with self._write():
+            claim = self.get_claim(claim_id)
+            if claim.status is status:
+                return claim
+
+            latest = self._connection.execute(
+                """
+                SELECT changed_at FROM claim_status_history
+                WHERE claim_id = ?
+                ORDER BY changed_at DESC
+                LIMIT 1
+                """,
+                (claim_id,),
+            ).fetchone()
+            effective_change_time = as_utc(changed_at or datetime.now(UTC))
+            if latest is not None:
+                latest_time = datetime.fromisoformat(latest["changed_at"])
+                if effective_change_time <= latest_time:
+                    effective_change_time = latest_time + timedelta(microseconds=1)
+
+            updated = claim.model_copy(update={"status": status})
             self._connection.execute(
                 "UPDATE claims SET status = ?, payload_json = ? WHERE claim_id = ?",
                 (status.value, json_dumps(updated), claim_id),
             )
             self._connection.execute(
                 """
-                INSERT OR REPLACE INTO claim_status_history(
-                    claim_id, status, changed_at, reason
-                ) VALUES (?, ?, ?, ?)
+                INSERT INTO claim_status_history(claim_id, status, changed_at, reason)
+                VALUES (?, ?, ?, ?)
                 """,
                 (claim_id, status.value, iso(effective_change_time), reason),
+            )
+            self.append_audit_event(
+                action="claim.status_changed",
+                resource_type="claim",
+                resource_id=claim_id,
+                payload={
+                    "previous_status": claim.status.value,
+                    "status": status.value,
+                    "reason": reason,
+                },
+                occurred_at=effective_change_time,
             )
         return updated

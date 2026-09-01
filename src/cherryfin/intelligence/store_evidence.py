@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 
 from cherryfin.core.models import Evidence
 from cherryfin.intelligence.models import EvidenceDocument
@@ -27,7 +27,9 @@ class EvidenceStoreMixin:
 
         supplied_hash = document.evidence.content_sha256
         computed_hash = (
-            hashlib.sha256(canonical_material).hexdigest() if canonical_material else None
+            hashlib.sha256(canonical_material).hexdigest()
+            if canonical_material is not None
+            else None
         )
         if supplied_hash and computed_hash and supplied_hash != computed_hash:
             raise IntegrityConflictError(
@@ -38,7 +40,27 @@ class EvidenceStoreMixin:
             raise IntegrityConflictError("evidence has no verifiable content hash")
 
         evidence = document.evidence.model_copy(update={"content_sha256": content_hash})
-        stored_document = document.model_copy(update={"evidence": evidence})
+        public_metadata = {
+            key: value for key, value in document.metadata.items() if key != "_record_sha256"
+        }
+        record_manifest = {
+            "evidence": evidence.model_dump(mode="json"),
+            "content_sha256": content_hash,
+            "mime_type": document.mime_type,
+            "language": document.language,
+            "metadata": public_metadata,
+        }
+        record_sha256 = hashlib.sha256(json_dumps(record_manifest).encode()).hexdigest()
+        stored_metadata = {**public_metadata, "_record_sha256": record_sha256}
+        ingested_at = document.ingested_at if self.trust_client_timestamps else datetime.now(UTC)
+        stored_document = document.model_copy(
+            update={
+                "evidence": evidence,
+                "ingested_at": ingested_at,
+                "record_sha256": record_sha256,
+                "metadata": stored_metadata,
+            }
+        )
         evidence_json = json_dumps(evidence)
         structured_json = (
             json_dumps(stored_document.structured_payload)
@@ -47,7 +69,7 @@ class EvidenceStoreMixin:
         )
         metadata_json = json_dumps(stored_document.metadata)
 
-        with self._lock, self._connection:
+        with self._write():
             existing = self._connection.execute(
                 "SELECT * FROM evidence WHERE evidence_id = ?",
                 (evidence.evidence_id,),
@@ -105,6 +127,20 @@ class EvidenceStoreMixin:
                     iso(stored_document.ingested_at),
                 ),
             )
+            self.append_audit_event(
+                action="evidence.ingested",
+                resource_type="evidence",
+                resource_id=evidence.evidence_id,
+                payload={
+                    "kind": evidence.kind.value,
+                    "source_name": evidence.source_name,
+                    "content_sha256": content_hash,
+                    "record_sha256": record_sha256,
+                    "mime_type": stored_document.mime_type,
+                    "bytes": len(canonical_material or b""),
+                },
+                occurred_at=stored_document.ingested_at,
+            )
         return stored_document, True
 
     def get_evidence(self, evidence_id: str, *, include_content: bool = False) -> EvidenceDocument:
@@ -124,12 +160,13 @@ class EvidenceStoreMixin:
         limit: int = 500,
     ) -> list[EvidenceDocument]:
         bounded_limit = max(1, min(limit, 5000))
+        cutoff_column = "observed_at" if self.trust_client_timestamps else "ingested_at"
         with self._lock:
             rows = self._connection.execute(
-                """
+                f"""
                 SELECT * FROM evidence
-                WHERE observed_at <= ?
-                ORDER BY observed_at DESC, evidence_id ASC
+                WHERE {cutoff_column} <= ?
+                ORDER BY {cutoff_column} DESC, evidence_id ASC
                 LIMIT ?
                 """,
                 (iso(knowledge_as_of), bounded_limit),
@@ -142,14 +179,23 @@ class EvidenceStoreMixin:
         *,
         include_content: bool,
     ) -> EvidenceDocument:
-        structured = json.loads(row["structured_json"]) if row["structured_json"] else None
+        metadata = json.loads(row["metadata_json"])
+        record_sha256 = metadata.get("_record_sha256")
+        public_metadata = {key: value for key, value in metadata.items() if key != "_record_sha256"}
+        structured = None
+        if include_content and row["structured_json"]:
+            structured = json.loads(row["structured_json"])
+        evidence = Evidence.model_validate_json(row["evidence_json"])
+        if not include_content and evidence.excerpt is not None:
+            evidence = evidence.model_copy(update={"excerpt": None})
         return EvidenceDocument(
-            evidence=Evidence.model_validate_json(row["evidence_json"]),
+            evidence=evidence,
             content=row["content_text"] if include_content else None,
             content_bytes=row["content_blob"] if include_content else None,
             structured_payload=structured,
             mime_type=row["mime_type"],
             language=row["language"],
             ingested_at=datetime.fromisoformat(row["ingested_at"]),
-            metadata=json.loads(row["metadata_json"]),
+            record_sha256=record_sha256,
+            metadata=public_metadata,
         )

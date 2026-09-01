@@ -119,20 +119,31 @@ class EvidenceDocument(BaseModel):
     mime_type: str | None = Field(default=None, max_length=200)
     language: str | None = Field(default=None, max_length=30)
     ingested_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    record_sha256: str | None = Field(default=None, min_length=64, max_length=64)
     metadata: dict[str, str] = Field(default_factory=dict)
 
+    @field_validator("record_sha256")
+    @classmethod
+    def validate_record_sha256(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.casefold()
+        if not re.fullmatch(r"[0-9a-f]{64}", normalized):
+            raise ValueError("record_sha256 must be 64 hexadecimal characters")
+        return normalized
+
     @model_validator(mode="after")
-    def require_hashable_material(self) -> Self:
-        if (
-            self.content is None
-            and self.content_bytes is None
-            and self.structured_payload is None
-            and self.evidence.content_sha256 is None
-        ):
+    def require_one_hashable_payload(self) -> Self:
+        payload_count = sum(
+            value is not None
+            for value in (self.content, self.content_bytes, self.structured_payload)
+        )
+        if payload_count > 1:
             raise ValueError(
-                "content, content_bytes, structured_payload, or a precomputed "
-                "content_sha256 is required"
+                "exactly one of content, content_bytes, or structured_payload may be supplied"
             )
+        if payload_count == 0 and self.evidence.content_sha256 is None:
+            raise ValueError("one payload or a precomputed evidence content_sha256 is required")
         return self
 
 

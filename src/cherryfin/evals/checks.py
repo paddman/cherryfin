@@ -10,6 +10,7 @@ from cherryfin.core.models import (
     PolicyDecision,
     SideEffectClass,
 )
+from cherryfin.intelligence.trust import answer_has_verified_sources
 
 _MARKET_MODES = {
     AgentMode.INVESTMENT_RESEARCH,
@@ -96,6 +97,7 @@ def evaluate_answer(
         if evidence_id in evidence_by_id
     )
     point_in_time_safe = claims_point_in_time_safe and evidence_point_in_time_safe
+    verified_sources = answer_has_verified_sources(request, answer)
 
     checks = {
         "mode_resolved": answer.mode is not AgentMode.AUTO,
@@ -103,7 +105,7 @@ def evaluate_answer(
         "claim_ids_valid": used_claims.issubset(supplied_claims),
         "claim_support_complete": claim_support_complete,
         "point_in_time_safe": point_in_time_safe,
-        "market_claims_have_sources": not market_mode or bool(used_evidence or used_claims),
+        "market_claims_have_verified_sources": not market_mode or verified_sources,
         "calculations_are_deterministic": all(
             calculation.deterministic for calculation in answer.calculations
         ),
@@ -124,7 +126,7 @@ def evaluate_answer(
         "claim_ids_valid": 10,
         "claim_support_complete": 10,
         "point_in_time_safe": 10,
-        "market_claims_have_sources": 15,
+        "market_claims_have_verified_sources": 15,
         "calculations_are_deterministic": 10,
         "risk_is_disclosed": 5,
         "uncertainty_is_explained": 5,
@@ -151,8 +153,10 @@ def evaluate_answer(
         critical_failures.append("policy_blocked")
 
     notes: list[str] = []
-    if market_mode and not (used_evidence or used_claims):
-        notes.append("Current market analysis requires time-stamped sources before release.")
+    if market_mode and not verified_sources:
+        notes.append(
+            "Current market analysis requires a verified, time-stamped source before release."
+        )
     if request.profile is None and answer.proposed_actions:
         notes.append("Suitability context is missing for personalized actions.")
 
@@ -161,7 +165,7 @@ def evaluate_answer(
         "claim_ids_valid",
         "claim_support_complete",
         "point_in_time_safe",
-        "market_claims_have_sources",
+        "market_claims_have_verified_sources",
         "calculations_are_deterministic",
         "side_effects_require_approval",
         "no_execution_authorized_in_analysis",
