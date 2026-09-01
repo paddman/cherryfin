@@ -134,8 +134,7 @@ class PolicyEngine:
             )
             if future_support:
                 blocked.append(
-                    f"Claim {claim_id} predates supporting evidence: "
-                    + ", ".join(future_support)
+                    f"Claim {claim_id} predates supporting evidence: " + ", ".join(future_support)
                 )
             if claim.status is ClaimStatus.RETRACTED:
                 blocked.append(f"The answer cited retracted claim {claim_id}.")

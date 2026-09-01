@@ -252,14 +252,18 @@ def resolve_instrument(
 def ingest_evidence(request: EvidenceIngestRequest, _: AdminDependency) -> EvidenceIngestResult:
     content_bytes = len(request.document.content_bytes or b"")
     content_text_bytes = len((request.document.content or "").encode())
-    structured_bytes = len(
-        json.dumps(
-            request.document.structured_payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ) if request.document.structured_payload is not None else 0
+    structured_bytes = (
+        len(
+            json.dumps(
+                request.document.structured_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        )
+        if request.document.structured_payload is not None
+        else 0
+    )
     if content_bytes + content_text_bytes + structured_bytes > settings.max_evidence_bytes:
         raise HTTPException(status_code=413, detail="Evidence exceeds the configured byte limit.")
     try:

@@ -98,18 +98,14 @@ class ContradictionStoreMixin:
                 )
             for claim_id in contradiction.claim_ids:
                 target_status = (
-                    ClaimStatus.ACTIVE
-                    if claim_id == accepted_claim_id
-                    else ClaimStatus.SUPERSEDED
+                    ClaimStatus.ACTIVE if claim_id == accepted_claim_id else ClaimStatus.SUPERSEDED
                 )
                 self.set_claim_status(claim_id, target_status)
 
         updated = contradiction.model_copy(
             update={
                 "status": (
-                    ContradictionStatus.DISMISSED
-                    if dismiss
-                    else ContradictionStatus.RESOLVED
+                    ContradictionStatus.DISMISSED if dismiss else ContradictionStatus.RESOLVED
                 ),
                 "resolved_at": datetime.now(UTC),
                 "accepted_claim_id": accepted_claim_id,

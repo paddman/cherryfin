@@ -127,9 +127,7 @@ def test_direct_evidence_look_ahead_is_blocked() -> None:
         query="Backtest revenue signal",
         mode=AgentMode.TRADING_RESEARCH,
         evidence=[
-            _evidence().model_copy(
-                update={"observed_at": datetime(2026, 2, 10, tzinfo=UTC)}
-            )
+            _evidence().model_copy(update={"observed_at": datetime(2026, 2, 10, tzinfo=UTC)})
         ],
         claims=[],
         knowledge_context=KnowledgeContextRequest(

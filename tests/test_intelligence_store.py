@@ -183,9 +183,7 @@ def test_claim_requires_existing_non_future_evidence() -> None:
 
 def test_point_in_time_query_blocks_future_knowledge_and_business_time() -> None:
     store = SQLiteIntelligenceStore()
-    store.add_evidence(
-        _document("ev_a", observed_at=datetime(2026, 1, 5, tzinfo=UTC))
-    )
+    store.add_evidence(_document("ev_a", observed_at=datetime(2026, 1, 5, tzinfo=UTC)))
     store.add_claim(
         _claim(
             "clm_a",

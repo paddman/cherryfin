@@ -105,9 +105,7 @@ def market_observation_to_records(
     digest = hashlib.sha256(material.encode()).hexdigest()
     evidence_id = f"ev_market_{digest[:20]}"
     claim_id = f"clm_market_{digest[20:40]}"
-    unit = observation.unit or (
-        "currency" if observation.currency else "number"
-    )
+    unit = observation.unit or ("currency" if observation.currency else "number")
     evidence = Evidence(
         evidence_id=evidence_id,
         kind=EvidenceKind.LICENSED_MARKET_DATA,

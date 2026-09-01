@@ -110,9 +110,7 @@ class Instrument(BaseModel):
 
 
 class EvidenceDocument(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid", ser_json_bytes="base64", val_json_bytes="base64"
-    )
+    model_config = ConfigDict(extra="forbid", ser_json_bytes="base64", val_json_bytes="base64")
 
     evidence: Evidence
     content: str | None = Field(default=None, max_length=2_000_000)

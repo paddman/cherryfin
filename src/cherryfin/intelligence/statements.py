@@ -303,11 +303,7 @@ class FinancialStatementParser:
                 if metric.apply_scale and parsed.unit_override != "percent":
                     value *= table.scale.multiplier
                 unit = parsed.unit_override or row.unit or metric.default_unit
-                currency = (
-                    table.currency
-                    if unit in {"currency", "currency_per_share"}
-                    else None
-                )
+                currency = table.currency if unit in {"currency", "currency_per_share"} else None
                 claim_id = self._claim_id(
                     subject_id=table.subject_id,
                     predicate=metric.predicate,

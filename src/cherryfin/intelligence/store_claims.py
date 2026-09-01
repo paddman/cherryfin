@@ -180,7 +180,7 @@ class ClaimStoreMixin:
                 FROM claims AS c
             )
             SELECT payload_json, point_in_time_status FROM point_in_time
-            WHERE {' AND '.join(conditions)}
+            WHERE {" AND ".join(conditions)}
             ORDER BY effective_at DESC, asserted_at DESC, claim_id ASC
             LIMIT ?
         """

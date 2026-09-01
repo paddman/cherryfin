@@ -129,14 +129,17 @@ class AllowlistedHTTPDocumentFetcher:
         validated_uri = self.validate_uri(uri)
         chunks: list[bytes] = []
         total = 0
-        async with httpx.AsyncClient(
-            timeout=self._timeout_seconds,
-            follow_redirects=False,
-        ) as client, client.stream(
-            "GET",
-            validated_uri,
-            headers={"Accept": "*/*", "User-Agent": "CherryFin/0.2"},
-        ) as response:
+        async with (
+            httpx.AsyncClient(
+                timeout=self._timeout_seconds,
+                follow_redirects=False,
+            ) as client,
+            client.stream(
+                "GET",
+                validated_uri,
+                headers={"Accept": "*/*", "User-Agent": "CherryFin/0.2"},
+            ) as response,
+        ):
             if response.is_redirect:
                 raise ValueError("redirects are not permitted for filing retrieval")
             response.raise_for_status()
@@ -199,9 +202,12 @@ def filing_to_evidence_document(
     descriptor: FilingDescriptor,
     fetched: FetchedDocument,
 ) -> EvidenceDocument:
-    evidence_id = "ev_" + hashlib.sha256(
-        f"{descriptor.source_name}|{descriptor.external_id}|{fetched.content_sha256}".encode()
-    ).hexdigest()[:24]
+    evidence_id = (
+        "ev_"
+        + hashlib.sha256(
+            f"{descriptor.source_name}|{descriptor.external_id}|{fetched.content_sha256}".encode()
+        ).hexdigest()[:24]
+    )
     return EvidenceDocument(
         evidence=Evidence(
             evidence_id=evidence_id,

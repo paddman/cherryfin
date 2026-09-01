@@ -119,10 +119,7 @@ class ContradictionDetector:
     @staticmethod
     def _same_reporting_context(left: FinancialClaim, right: FinancialClaim) -> bool:
         if left.period_start or left.period_end or right.period_start or right.period_end:
-            return (
-                left.period_start == right.period_start
-                and left.period_end == right.period_end
-            )
+            return left.period_start == right.period_start and left.period_end == right.period_end
         return left.effective_at == right.effective_at
 
     @staticmethod
@@ -172,10 +169,7 @@ class ClaimLedger:
                 raise IntegrityConflictError(
                     f"supersedes_claim_id {claim.supersedes_claim_id} does not exist"
                 ) from exc
-            if (
-                superseded.subject_id != claim.subject_id
-                or superseded.predicate != claim.predicate
-            ):
+            if superseded.subject_id != claim.subject_id or superseded.predicate != claim.predicate:
                 raise IntegrityConflictError(
                     "a claim may only supersede another claim with the same subject and predicate"
                 )
