@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cherryfin"
-version = "0.1.0"
-description = "Evidence-first financial intelligence agent with deterministic calculations and human-controlled execution."
+version = "0.2.0"
+description = "Point-in-time financial intelligence with evidence provenance and human control."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
