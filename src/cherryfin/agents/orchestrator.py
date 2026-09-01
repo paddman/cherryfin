@@ -14,6 +14,7 @@ from cherryfin.core.models import (
     FinancialAnswer,
 )
 from cherryfin.evals.checks import evaluate_answer
+from cherryfin.intelligence.trust import answer_has_verified_sources
 from cherryfin.policy.engine import PolicyEngine
 from cherryfin.providers.llm import LLMProvider
 from cherryfin.settings import Settings
@@ -83,13 +84,22 @@ class CherryFinancialAgent:
         limitations = list(answer.limitations)
         reasons = list(answer.confidence_reasons)
         has_sources = bool(answer.evidence_ids_used or answer.claim_ids_used)
+        has_verified_sources = answer_has_verified_sources(request, answer)
 
-        if answer.mode in market_modes and not has_sources:
+        if answer.mode in market_modes and not has_verified_sources:
             updates["confidence"] = min(answer.confidence, 0.35)
-            limitation = "No time-stamped market evidence was supplied."
+            limitation = (
+                "No time-stamped market evidence was supplied."
+                if not has_sources
+                else "Only unverified or user-provided sources were cited."
+            )
             if limitation not in limitations:
                 limitations.append(limitation)
-            reason = "Confidence is capped because current point-in-time evidence is missing."
+            reason = (
+                "Confidence is capped because current point-in-time evidence is missing."
+                if not has_sources
+                else "Confidence is capped because cited sources did not cross a verified boundary."
+            )
             if reason not in reasons:
                 reasons.append(reason)
 

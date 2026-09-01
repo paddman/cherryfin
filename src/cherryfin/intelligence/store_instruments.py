@@ -20,7 +20,7 @@ class InstrumentStoreMixin:
     def add_instrument(self, instrument: Instrument) -> tuple[Instrument, bool]:
         instrument_id = str(instrument.instrument_id)
         payload = json_dumps(instrument)
-        with self._lock, self._connection:
+        with self._write():
             existing = self._connection.execute(
                 "SELECT payload_json FROM instruments WHERE instrument_id = ?",
                 (instrument_id,),
@@ -56,6 +56,23 @@ class InstrumentStoreMixin:
                 ) VALUES (?, ?, ?, ?)
                 """,
                 [(*identifier.key, instrument_id) for identifier in instrument.identifiers],
+            )
+            self.append_audit_event(
+                action="instrument.created",
+                resource_type="instrument",
+                resource_id=instrument_id,
+                payload={
+                    "name": instrument.name,
+                    "asset_class": instrument.asset_class.value,
+                    "identifiers": [
+                        {
+                            "scheme": identifier.scheme.value,
+                            "value": identifier.value,
+                            "venue": identifier.venue,
+                        }
+                        for identifier in instrument.identifiers
+                    ],
+                },
             )
         return instrument, True
 

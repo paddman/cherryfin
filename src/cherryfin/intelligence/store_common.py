@@ -56,6 +56,7 @@ def claim_fingerprint(claim: FinancialClaim) -> str:
         "effective_at": iso(claim.effective_at),
         "expires_at": iso(claim.expires_at) if claim.expires_at else None,
         "evidence_ids": sorted(claim.evidence_ids),
+        "confidence": claim.confidence,
         "supersedes_claim_id": claim.supersedes_claim_id,
         "methodology": claim.methodology,
         "metadata": claim.metadata,

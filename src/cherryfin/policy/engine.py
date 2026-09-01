@@ -15,6 +15,7 @@ from cherryfin.core.models import (
     PolicyDecision,
     SideEffectClass,
 )
+from cherryfin.intelligence.trust import answer_has_verified_sources
 from cherryfin.settings import Settings
 
 _MARKET_MODES = {
@@ -63,9 +64,18 @@ class PolicyEngine:
         blocked: list[str] = []
         warnings: list[str] = []
 
-        if any(
-            re.search(pattern, request.query, flags=re.IGNORECASE) for pattern in _SECRET_PATTERNS
-        ):
+        untrusted_values = [request.query, *request.metadata.values()]
+        for evidence in request.evidence:
+            if evidence.kind is EvidenceKind.USER_PROVIDED:
+                untrusted_values.extend(
+                    [
+                        evidence.source_name,
+                        evidence.title,
+                        evidence.uri or "",
+                        evidence.excerpt or "",
+                    ]
+                )
+        if any(self._contains_secret(value) for value in untrusted_values):
             blocked.append(
                 "The request appears to contain a credential, private key, or recovery phrase. "
                 "Remove secrets before analysis."
@@ -134,7 +144,8 @@ class PolicyEngine:
             )
             if future_support:
                 blocked.append(
-                    f"Claim {claim_id} predates supporting evidence: " + ", ".join(future_support)
+                    f"Claim {claim_id} predates supporting evidence: "
+                    + ", ".join(future_support)
                 )
             if claim.status is ClaimStatus.RETRACTED:
                 blocked.append(f"The answer cited retracted claim {claim_id}.")
@@ -213,15 +224,21 @@ class PolicyEngine:
                     + ", ".join(look_ahead_evidence_ids)
                 )
 
-        has_sources = bool(answer.evidence_ids_used or answer.claim_ids_used)
-        if answer.mode in _MARKET_MODES and not has_sources:
+        verified_sources = answer_has_verified_sources(request, answer)
+        if answer.mode in _MARKET_MODES and not verified_sources:
             warnings.append(
-                "Market or investment analysis has no cited evidence or verified claim and must "
-                "be treated as education or a scenario, not a current recommendation."
+                "Market or investment analysis lacks a verified source and must be treated as "
+                "education or a scenario, not a current recommendation."
+            )
+        if answer.mode in _MARKET_MODES and answer.confidence > 0.35 and not verified_sources:
+            blocked.append(
+                "Confidence exceeds the allowed cap for market analysis without verified sources."
             )
 
-        if answer.mode in _MARKET_MODES and answer.confidence > 0.35 and not has_sources:
-            blocked.append("Confidence exceeds the allowed cap for uncited market analysis.")
+        if answer.calculations:
+            blocked.append(
+                "Analysis returned calculations without a server calculation registry artifact."
+            )
 
         answer_text = " ".join([answer.summary, *answer.key_findings, *answer.confidence_reasons])
         if any(
@@ -305,6 +322,11 @@ class PolicyEngine:
             requires_human_approval=requires_approval,
             blocked_reasons=self._deduplicate(blocked),
             warnings=self._deduplicate(warnings),
+        )
+
+    def _contains_secret(self, value: str) -> bool:
+        return any(
+            re.search(pattern, value, flags=re.IGNORECASE) for pattern in _SECRET_PATTERNS
         )
 
     def _evidence_business_time(self, evidence: Evidence) -> datetime:

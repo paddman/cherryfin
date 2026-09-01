@@ -3,6 +3,8 @@ from decimal import Decimal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from cherryfin.security.auth import TenantCredential
+
 
 class Settings(BaseSettings):
     """Runtime configuration loaded from CHERRYFIN_* environment variables."""
@@ -23,8 +25,11 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
 
     intelligence_store_path: str = ":memory:"
-    max_evidence_bytes: int = Field(default=20_000_000, ge=1, le=20_000_000)
+    default_tenant_id: str = "default"
+    tenant_credentials: dict[str, TenantCredential] = Field(default_factory=dict)
     admin_api_key: str = ""
+    max_evidence_bytes: int = Field(default=20_000_000, ge=1, le=20_000_000)
+    max_inline_evidence_trust: float = Field(default=0.60, ge=0, le=0.80)
 
     execution_enabled: bool = False
     max_transaction_notional: Decimal = Field(default=Decimal("0"), ge=0)

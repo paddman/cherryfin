@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from cherryfin.intelligence.claims import ClaimLedger
 from cherryfin.intelligence.models import (
     ClaimQueryResult,
@@ -12,7 +14,7 @@ from cherryfin.intelligence.store import SQLiteIntelligenceStore
 
 
 class EvidencePipeline:
-    """Ingests immutable evidence, extracts table facts, and records disagreements."""
+    """Ingests evidence, extracted claims, contradictions, and audit events atomically."""
 
     def __init__(
         self,
@@ -26,26 +28,46 @@ class EvidencePipeline:
         self._statement_parser = statement_parser or FinancialStatementParser()
 
     def ingest(self, request: EvidenceIngestRequest) -> EvidenceIngestResult:
-        document, evidence_created = self._store.add_evidence(request.document)
-        claims = []
-        contradictions_by_id = {}
-        statement_issues = []
-        claims_created = 0
+        ingestion_id = uuid4()
+        with self._store.transaction():
+            document, evidence_created = self._store.add_evidence(request.document)
+            claims = []
+            contradictions_by_id = {}
+            statement_issues = []
+            claims_created = 0
 
-        if request.statement is not None:
-            parsed = self._statement_parser.parse(
-                table=request.statement,
-                evidence=document.evidence,
+            if request.statement is not None:
+                parsed = self._statement_parser.parse(
+                    table=request.statement,
+                    evidence=document.evidence,
+                )
+                statement_issues = parsed.issues
+                for candidate in parsed.claims:
+                    if not self._store.trust_client_timestamps:
+                        candidate = candidate.model_copy(
+                            update={"asserted_at": document.ingested_at}
+                        )
+                    result = self._ledger.record(candidate)
+                    claims.append(result.claim)
+                    claims_created += int(result.created)
+                    for contradiction in result.contradictions:
+                        contradictions_by_id[contradiction.contradiction_id] = contradiction
+
+            self._store.append_audit_event(
+                action="ingestion.completed",
+                resource_type="ingestion",
+                resource_id=str(ingestion_id),
+                payload={
+                    "evidence_id": document.evidence.evidence_id,
+                    "evidence_created": evidence_created,
+                    "claims_created": claims_created,
+                    "contradictions": sorted(contradictions_by_id),
+                    "statement_issue_count": len(statement_issues),
+                },
             )
-            statement_issues = parsed.issues
-            for candidate in parsed.claims:
-                result = self._ledger.record(candidate)
-                claims.append(result.claim)
-                claims_created += int(result.created)
-                for contradiction in result.contradictions:
-                    contradictions_by_id[contradiction.contradiction_id] = contradiction
 
         return EvidenceIngestResult(
+            ingestion_id=ingestion_id,
             evidence=document.evidence,
             evidence_created=evidence_created,
             claims=claims,
