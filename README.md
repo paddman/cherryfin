@@ -134,7 +134,8 @@ source dates remain source metadata and cannot rewrite CherryFin's transaction-t
 ## Start locally
 
 ```bash
-git switch feat/security-tenancy-integrity
+git switch main
+git pull --ff-only
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
