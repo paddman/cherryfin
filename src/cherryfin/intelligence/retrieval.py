@@ -65,8 +65,7 @@ def hydrate_analysis_request(
     collisions = sorted(set(inline_evidence) & set(ledger_evidence))
     if collisions:
         raise KnowledgeSourceCollisionError(
-            "inline evidence IDs collide with ledger-owned evidence: "
-            + ", ".join(collisions)
+            "inline evidence IDs collide with ledger-owned evidence: " + ", ".join(collisions)
         )
 
     metadata = dict(request.metadata)

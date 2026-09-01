@@ -28,9 +28,9 @@ from cherryfin.intelligence.retrieval import (
 from cherryfin.intelligence.store import SQLiteIntelligenceStore
 from cherryfin.intelligence.tenant_store import TenantStoreRegistry
 from cherryfin.security.auth import (
-    AuthService,
     AuthenticationError,
     AuthorizationError,
+    AuthService,
     Role,
     Scope,
     TenantCredential,
@@ -107,9 +107,7 @@ def test_development_bypass_is_disabled_when_any_credentials_exist() -> None:
         environment="development",
         default_tenant_id="default",
         platform_admin_api_key="",
-        tenant_credentials={
-            "acme": TenantCredential(api_key="tenant-secret", role=Role.VIEWER)
-        },
+        tenant_credentials={"acme": TenantCredential(api_key="tenant-secret", role=Role.VIEWER)},
     )
     with pytest.raises(AuthenticationError):
         service.authenticate(tenant_id="default", actor_id="dev", api_key=None)

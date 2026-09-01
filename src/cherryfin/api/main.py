@@ -56,9 +56,9 @@ from cherryfin.intelligence.store_audit import AuditEvent, AuditVerification
 from cherryfin.intelligence.tenant_store import TenantStoreRegistry
 from cherryfin.providers.llm import LLMProviderError, OpenAICompatibleProvider
 from cherryfin.security.auth import (
-    AuthService,
     AuthenticationError,
     AuthorizationError,
+    AuthService,
     Principal,
     Scope,
 )
@@ -366,9 +366,7 @@ async def analyze(
                 "evaluation_passed": response.evaluation.passed,
                 "claim_ids_used": response.answer.claim_ids_used,
                 "evidence_ids_used": response.answer.evidence_ids_used,
-                "knowledge_snapshot_sha256": hydrated.metadata.get(
-                    "knowledge_snapshot_sha256"
-                ),
+                "knowledge_snapshot_sha256": hydrated.metadata.get("knowledge_snapshot_sha256"),
             },
         )
     return response

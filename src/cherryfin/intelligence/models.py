@@ -143,9 +143,7 @@ class EvidenceDocument(BaseModel):
                 "exactly one of content, content_bytes, or structured_payload may be supplied"
             )
         if payload_count == 0 and self.evidence.content_sha256 is None:
-            raise ValueError(
-                "one payload or a precomputed evidence content_sha256 is required"
-            )
+            raise ValueError("one payload or a precomputed evidence content_sha256 is required")
         return self
 
 

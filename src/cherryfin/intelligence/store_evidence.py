@@ -181,9 +181,7 @@ class EvidenceStoreMixin:
     ) -> EvidenceDocument:
         metadata = json.loads(row["metadata_json"])
         record_sha256 = metadata.get("_record_sha256")
-        public_metadata = {
-            key: value for key, value in metadata.items() if key != "_record_sha256"
-        }
+        public_metadata = {key: value for key, value in metadata.items() if key != "_record_sha256"}
         structured = None
         if include_content and row["structured_json"]:
             structured = json.loads(row["structured_json"])

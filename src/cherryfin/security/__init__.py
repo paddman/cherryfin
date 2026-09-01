@@ -1,9 +1,9 @@
 """Authentication and authorization primitives for CherryFin."""
 
 from cherryfin.security.auth import (
-    AuthService,
     AuthenticationError,
     AuthorizationError,
+    AuthService,
     Principal,
     Role,
     Scope,

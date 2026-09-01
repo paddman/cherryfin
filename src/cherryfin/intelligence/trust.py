@@ -32,8 +32,7 @@ def claim_has_verified_support(
     """A claim is verified only when every cited source exists and is verified."""
 
     return bool(claim.evidence_ids) and all(
-        evidence_id in evidence_by_id
-        and is_verified_evidence(evidence_by_id[evidence_id])
+        evidence_id in evidence_by_id and is_verified_evidence(evidence_by_id[evidence_id])
         for evidence_id in claim.evidence_ids
     )
 
@@ -46,8 +45,7 @@ def answer_has_verified_sources(
 
     evidence_by_id = {item.evidence_id: item for item in request.evidence}
     if any(
-        evidence_id in evidence_by_id
-        and is_verified_evidence(evidence_by_id[evidence_id])
+        evidence_id in evidence_by_id and is_verified_evidence(evidence_by_id[evidence_id])
         for evidence_id in answer.evidence_ids_used
     ):
         return True

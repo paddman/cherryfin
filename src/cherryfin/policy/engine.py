@@ -144,8 +144,7 @@ class PolicyEngine:
             )
             if future_support:
                 blocked.append(
-                    f"Claim {claim_id} predates supporting evidence: "
-                    + ", ".join(future_support)
+                    f"Claim {claim_id} predates supporting evidence: " + ", ".join(future_support)
                 )
             if claim.status is ClaimStatus.RETRACTED:
                 blocked.append(f"The answer cited retracted claim {claim_id}.")
@@ -325,9 +324,7 @@ class PolicyEngine:
         )
 
     def _contains_secret(self, value: str) -> bool:
-        return any(
-            re.search(pattern, value, flags=re.IGNORECASE) for pattern in _SECRET_PATTERNS
-        )
+        return any(re.search(pattern, value, flags=re.IGNORECASE) for pattern in _SECRET_PATTERNS)
 
     def _evidence_business_time(self, evidence: Evidence) -> datetime:
         data_as_of = evidence.data_as_of

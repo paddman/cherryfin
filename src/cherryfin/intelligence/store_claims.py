@@ -107,10 +107,7 @@ class ClaimStoreMixin:
             )
             self._connection.executemany(
                 "INSERT INTO claim_evidence(claim_id, evidence_id) VALUES (?, ?)",
-                [
-                    (stored_claim.claim_id, evidence_id)
-                    for evidence_id in stored_claim.evidence_ids
-                ],
+                [(stored_claim.claim_id, evidence_id) for evidence_id in stored_claim.evidence_ids],
             )
             self._connection.execute(
                 """

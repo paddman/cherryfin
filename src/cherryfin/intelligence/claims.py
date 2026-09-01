@@ -196,9 +196,7 @@ class ClaimLedger:
                 contradiction = self._detector.detect(stored, existing)
                 if contradiction is None:
                     continue
-                persisted, contradiction_created = self._store.add_contradiction(
-                    contradiction
-                )
+                persisted, contradiction_created = self._store.add_contradiction(contradiction)
                 if contradiction_created:
                     contradictions.append(persisted)
                     if existing.status is ClaimStatus.ACTIVE:
