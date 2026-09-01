@@ -8,6 +8,8 @@ from cherryfin.core.models import (
     ActionKind,
     AgentMode,
     AnalysisRequest,
+    ClaimStatus,
+    Evidence,
     EvidenceKind,
     FinancialAnswer,
     PolicyDecision,
@@ -75,6 +77,13 @@ class PolicyEngine:
                 "the request may be processed transiently but must not be persisted."
             )
 
+        evidence_ids = [item.evidence_id for item in request.evidence]
+        if len(evidence_ids) != len(set(evidence_ids)):
+            blocked.append("The request contains duplicate evidence IDs.")
+        claim_ids = [item.claim_id for item in request.claims]
+        if len(claim_ids) != len(set(claim_ids)):
+            blocked.append("The request contains duplicate claim IDs.")
+
         return PreflightDecision(
             allowed=not blocked,
             blocked_reasons=tuple(blocked),
@@ -90,27 +99,128 @@ class PolicyEngine:
     ) -> PolicyDecision:
         blocked: list[str] = []
         warnings: list[str] = list(preflight_warnings)
-        evidence_ids = {item.evidence_id for item in request.evidence}
-        used_ids = set(answer.evidence_ids_used)
+        evidence_by_id = {item.evidence_id: item for item in request.evidence}
+        claims_by_id = {item.claim_id: item for item in request.claims}
+        used_evidence_ids = set(answer.evidence_ids_used)
+        used_claim_ids = set(answer.claim_ids_used)
 
-        invented_ids = sorted(used_ids - evidence_ids)
-        if invented_ids:
+        invented_evidence_ids = sorted(used_evidence_ids - set(evidence_by_id))
+        if invented_evidence_ids:
             blocked.append(
                 "The answer referenced evidence IDs that were not supplied: "
-                + ", ".join(invented_ids)
+                + ", ".join(invented_evidence_ids)
+            )
+        invented_claim_ids = sorted(used_claim_ids - set(claims_by_id))
+        if invented_claim_ids:
+            blocked.append(
+                "The answer referenced claim IDs that were not supplied: "
+                + ", ".join(invented_claim_ids)
             )
 
-        if answer.mode in _MARKET_MODES and not answer.evidence_ids_used:
+        for claim_id in sorted(used_claim_ids & set(claims_by_id)):
+            claim = claims_by_id[claim_id]
+            missing_support = sorted(set(claim.evidence_ids) - set(evidence_by_id))
+            if missing_support:
+                blocked.append(
+                    f"Claim {claim_id} lacks supplied supporting evidence: "
+                    + ", ".join(missing_support)
+                )
+            future_support = sorted(
+                evidence_id
+                for evidence_id in claim.evidence_ids
+                if evidence_id in evidence_by_id
+                and self._as_utc(evidence_by_id[evidence_id].observed_at)
+                > self._as_utc(claim.asserted_at)
+            )
+            if future_support:
+                blocked.append(
+                    f"Claim {claim_id} predates supporting evidence: " + ", ".join(future_support)
+                )
+            if claim.status is ClaimStatus.RETRACTED:
+                blocked.append(f"The answer cited retracted claim {claim_id}.")
+            elif claim.status is ClaimStatus.SUPERSEDED:
+                warnings.append(f"The answer cited superseded claim {claim_id}.")
+            elif claim.status is ClaimStatus.DISPUTED:
+                warnings.append(
+                    f"The answer cited disputed claim {claim_id}; confidence must remain capped."
+                )
+
+        business_as_of = request.requested_as_of
+        knowledge_as_of = None
+        if request.knowledge_context:
+            business_as_of = request.knowledge_context.business_as_of or business_as_of
+            knowledge_as_of = request.knowledge_context.knowledge_as_of
+
+        if business_as_of:
+            business_cutoff = self._as_utc(business_as_of)
+            future_claim_ids = sorted(
+                claim_id
+                for claim_id in used_claim_ids
+                if claim_id in claims_by_id
+                and self._as_utc(claims_by_id[claim_id].effective_at) > business_cutoff
+            )
+            expired_claim_ids = sorted(
+                claim_id
+                for claim_id in used_claim_ids
+                if claim_id in claims_by_id
+                and claims_by_id[claim_id].expires_at is not None
+                and self._as_utc(claims_by_id[claim_id].expires_at) <= business_cutoff
+            )
+            future_evidence_ids = sorted(
+                evidence_id
+                for evidence_id in used_evidence_ids
+                if evidence_id in evidence_by_id
+                and self._evidence_business_time(evidence_by_id[evidence_id]) > business_cutoff
+            )
+            if future_claim_ids:
+                blocked.append(
+                    "The answer used claims effective after business_as_of: "
+                    + ", ".join(future_claim_ids)
+                )
+            if expired_claim_ids:
+                blocked.append(
+                    "The answer used claims expired at business_as_of: "
+                    + ", ".join(expired_claim_ids)
+                )
+            if future_evidence_ids:
+                blocked.append(
+                    "The answer used evidence dated after business_as_of: "
+                    + ", ".join(future_evidence_ids)
+                )
+
+        if knowledge_as_of:
+            knowledge_cutoff = self._as_utc(knowledge_as_of)
+            look_ahead_claim_ids = sorted(
+                claim_id
+                for claim_id in used_claim_ids
+                if claim_id in claims_by_id
+                and self._as_utc(claims_by_id[claim_id].asserted_at) > knowledge_cutoff
+            )
+            look_ahead_evidence_ids = sorted(
+                evidence_id
+                for evidence_id in used_evidence_ids
+                if evidence_id in evidence_by_id
+                and self._as_utc(evidence_by_id[evidence_id].observed_at) > knowledge_cutoff
+            )
+            if look_ahead_claim_ids:
+                blocked.append(
+                    "The answer used claims not yet known at knowledge_as_of: "
+                    + ", ".join(look_ahead_claim_ids)
+                )
+            if look_ahead_evidence_ids:
+                blocked.append(
+                    "The answer used evidence not yet known at knowledge_as_of: "
+                    + ", ".join(look_ahead_evidence_ids)
+                )
+
+        has_sources = bool(answer.evidence_ids_used or answer.claim_ids_used)
+        if answer.mode in _MARKET_MODES and not has_sources:
             warnings.append(
-                "Market or investment analysis has no cited evidence and must be treated as "
-                "education or a scenario, not a current recommendation."
+                "Market or investment analysis has no cited evidence or verified claim and must "
+                "be treated as education or a scenario, not a current recommendation."
             )
 
-        if (
-            answer.mode in _MARKET_MODES
-            and answer.confidence > 0.35
-            and not answer.evidence_ids_used
-        ):
+        if answer.mode in _MARKET_MODES and answer.confidence > 0.35 and not has_sources:
             blocked.append("Confidence exceeds the allowed cap for uncited market analysis.")
 
         answer_text = " ".join([answer.summary, *answer.key_findings, *answer.confidence_reasons])
@@ -119,8 +229,13 @@ class PolicyEngine:
         ):
             blocked.append("The answer contains a prohibited guarantee or risk-free claim.")
 
+        relevant_evidence_ids = set(used_evidence_ids)
+        for claim_id in used_claim_ids & set(claims_by_id):
+            relevant_evidence_ids.update(claims_by_id[claim_id].evidence_ids)
+
         now = datetime.now(UTC)
-        for evidence in request.evidence:
+        for evidence_id in sorted(relevant_evidence_ids & set(evidence_by_id)):
+            evidence = evidence_by_id[evidence_id]
             data_time = evidence.data_as_of or evidence.published_at or evidence.observed_at
             data_time = self._as_utc(data_time)
             age_seconds = max(0.0, (now - data_time).total_seconds())
@@ -184,16 +299,19 @@ class PolicyEngine:
                 "education or simulation mode."
             )
 
-        # Analysis responses never authorize execution. A separate approval service must issue a
-        # short-lived, scoped authorization before an execution connector can run.
-        execution_allowed = False
         return PolicyDecision(
             allowed=not blocked,
-            execution_allowed=execution_allowed,
+            execution_allowed=False,
             requires_human_approval=requires_approval,
             blocked_reasons=self._deduplicate(blocked),
             warnings=self._deduplicate(warnings),
         )
+
+    def _evidence_business_time(self, evidence: Evidence) -> datetime:
+        data_as_of = evidence.data_as_of
+        published_at = evidence.published_at
+        observed_at = evidence.observed_at
+        return self._as_utc(data_as_of or published_at or observed_at)
 
     @staticmethod
     def _as_utc(value: datetime) -> datetime:

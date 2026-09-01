@@ -10,6 +10,7 @@ from cherryfin.core.models import (
     AgentMode,
     AnalysisRequest,
     AnalysisResponse,
+    ClaimStatus,
     FinancialAnswer,
 )
 from cherryfin.evals.checks import evaluate_answer
@@ -81,27 +82,54 @@ class CherryFinancialAgent:
         updates: dict[str, object] = {}
         limitations = list(answer.limitations)
         reasons = list(answer.confidence_reasons)
+        has_sources = bool(answer.evidence_ids_used or answer.claim_ids_used)
 
-        if answer.mode in market_modes and not answer.evidence_ids_used:
+        if answer.mode in market_modes and not has_sources:
             updates["confidence"] = min(answer.confidence, 0.35)
             limitation = "No time-stamped market evidence was supplied."
             if limitation not in limitations:
                 limitations.append(limitation)
-            reason = "Confidence is capped because current evidence is missing."
+            reason = "Confidence is capped because current point-in-time evidence is missing."
             if reason not in reasons:
                 reasons.append(reason)
 
-        supplied = {item.evidence_id: item for item in request.evidence}
-        used_scores = [
-            supplied[item].trust_score for item in answer.evidence_ids_used if item in supplied
+        supplied_evidence = {item.evidence_id: item for item in request.evidence}
+        supplied_claims = {item.claim_id: item for item in request.claims}
+        source_scores = [
+            supplied_evidence[item].trust_score
+            for item in answer.evidence_ids_used
+            if item in supplied_evidence
         ]
-        if used_scores:
-            evidence_cap = min(used_scores) + 0.10
+        source_scores.extend(
+            supplied_claims[item].confidence
+            for item in answer.claim_ids_used
+            if item in supplied_claims
+        )
+        if source_scores:
+            source_cap = min(source_scores) + 0.10
             updates["confidence"] = min(
                 float(updates.get("confidence", answer.confidence)),
-                evidence_cap,
+                source_cap,
                 1.0,
             )
+
+        disputed_claims = [
+            claim_id
+            for claim_id in answer.claim_ids_used
+            if claim_id in supplied_claims
+            and supplied_claims[claim_id].status is ClaimStatus.DISPUTED
+        ]
+        if disputed_claims:
+            updates["confidence"] = min(
+                float(updates.get("confidence", answer.confidence)),
+                0.5,
+            )
+            limitation = "One or more cited claims are disputed: " + ", ".join(disputed_claims)
+            if limitation not in limitations:
+                limitations.append(limitation)
+            reason = "Confidence is capped while contradictory claims await adjudication."
+            if reason not in reasons:
+                reasons.append(reason)
 
         updates["limitations"] = limitations
         updates["confidence_reasons"] = reasons

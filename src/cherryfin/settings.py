@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
 
+    intelligence_store_path: str = ":memory:"
+    max_evidence_bytes: int = Field(default=20_000_000, ge=1, le=20_000_000)
+    admin_api_key: str = ""
+
     execution_enabled: bool = False
     max_transaction_notional: Decimal = Field(default=Decimal("0"), ge=0)
     default_currency: str = Field(default="THB", min_length=3, max_length=3)

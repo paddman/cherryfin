@@ -5,7 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN addgroup --system cherryfin && adduser --system --ingroup cherryfin cherryfin
+RUN addgroup --system cherryfin \
+    && adduser --system --ingroup cherryfin cherryfin \
+    && mkdir -p /var/lib/cherryfin \
+    && chown -R cherryfin:cherryfin /var/lib/cherryfin
 
 COPY pyproject.toml README.md ./
 COPY src ./src
